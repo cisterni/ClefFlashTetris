@@ -26,7 +26,7 @@ app.MapPost("/api/decision", async (DecisionRequest request, OllamaDecisionClien
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            [nameof(request.Board)] = ["La griglia deve contenere 20 righe da 10 celle."]
+            [nameof(request.Board)] = ["The board must contain 20 rows of 10 cells each."]
         });
     }
 
@@ -34,7 +34,7 @@ app.MapPost("/api/decision", async (DecisionRequest request, OllamaDecisionClien
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            [nameof(request.Candidates)] = ["Servono da 1 a 64 mosse candidate."]
+            [nameof(request.Candidates)] = ["Between 1 and 64 candidate moves are required."]
         });
     }
 
@@ -44,7 +44,7 @@ app.MapPost("/api/decision", async (DecisionRequest request, OllamaDecisionClien
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            [nameof(request.Candidates)] = ["Ogni candidato deve avere un id semplice (lettere, numeri, _, . o -)."]
+            [nameof(request.Candidates)] = ["Each candidate must have a simple ID (letters, numbers, _, . or -)."]
         });
     }
 
@@ -116,12 +116,12 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
                 true,
                 modelAvailable,
                 modelAvailable ? "ollama" : "local-fallback",
-                modelAvailable ? null : $"Modello {Model} non installato. Esegui: ollama pull {Model}");
+                modelAvailable ? null : $"Model {Model} is not installed. Run: ollama pull {Model}");
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
-            logger.LogDebug(exception, "Ollama non disponibile su {BaseUrl}", BaseUrl);
-            return new ModelStatus(Model, "Ollama", BaseUrl, auditLog.DisplayPath, false, false, "local-fallback", "Ollama non raggiungibile.");
+            logger.LogDebug(exception, "Ollama is unavailable at {BaseUrl}", BaseUrl);
+            return new ModelStatus(Model, "Ollama", BaseUrl, auditLog.DisplayPath, false, false, "local-fallback", "Ollama is unreachable.");
         }
 
         bool MatchesModel(string? installed) =>
@@ -138,12 +138,12 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
 
         var criteria = shortlistedCandidates.ToDictionary(
             candidate => candidate.Id,
-            candidate => $"Rotazione {candidate.Rotation}, colonna {candidate.X}. Risultato: righe={candidate.ClearedLines}, buchi={candidate.Holes}, altezzaTotale={candidate.AggregateHeight}, irregolarita={candidate.Bumpiness}, altezzaMax={candidate.MaxHeight}.");
+            candidate => $"Rotation {candidate.Rotation}, column {candidate.X}. Outcome: clearedLines={candidate.ClearedLines}, holes={candidate.Holes}, aggregateHeight={candidate.AggregateHeight}, bumpiness={candidate.Bumpiness}, maxHeight={candidate.MaxHeight}.");
 
         var state = new
         {
             game = "Tetris",
-            objective = "Scegli una posa legale che massimizzi le righe completate e minimizzi buchi, altezza massima e irregolarita della superficie.",
+            objective = "Choose a legal placement that maximizes cleared lines while minimizing holes, maximum height, and surface bumpiness.",
             piece = request.Piece,
             score = request.Score,
             lines = request.Lines,
@@ -159,7 +159,7 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
                 ["move"] = new
                 {
                     type = "choice",
-                    instructions = "Scegli la migliore mossa Tetris tra quelle ammesse. Dai priorita assoluta alle righe completate, evita buchi, poi riduci altezza massima, altezza totale e irregolarita.",
+                    instructions = "Choose the best Tetris move among the allowed options. Give absolute priority to cleared lines, avoid holes, then reduce maximum height, aggregate height, and bumpiness.",
                     criteria
                 }
             },
@@ -180,8 +180,8 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("Ollama ha risposto con HTTP {StatusCode}", (int)response.StatusCode);
-                var note = $"Ollama HTTP {(int)response.StatusCode}; usato fallback locale.";
+                logger.LogWarning("Ollama returned HTTP {StatusCode}", (int)response.StatusCode);
+                var note = $"Ollama HTTP {(int)response.StatusCode}; used local fallback.";
                 await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, (int)response.StatusCode, stopwatch.ElapsedMilliseconds, rawResponse, note, null);
                 return LocalDecision(request.Candidates, note, stopwatch.ElapsedMilliseconds);
             }
@@ -196,7 +196,7 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
 
             if (choice is null || shortlistedCandidates.All(candidate => candidate.Id != choice))
             {
-                const string note = "Ollama ha restituito una scelta non valida; usato fallback locale.";
+                const string note = "Ollama returned an invalid choice; used local fallback.";
                 await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, (int)response.StatusCode, stopwatch.ElapsedMilliseconds, rawResponse, note, null);
                 return LocalDecision(request.Candidates, note, stopwatch.ElapsedMilliseconds);
             }
@@ -208,8 +208,8 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
             stopwatch.Stop();
-            logger.LogWarning(exception, "Decisione Ollama/{Model} non disponibile; attivo il fallback locale", Model);
-            const string note = "Ollama/Clef-Flash non raggiungibile; usato fallback locale.";
+            logger.LogWarning(exception, "Ollama/{Model} decision unavailable; enabling local fallback", Model);
+            const string note = "Ollama/Clef-Flash is unreachable; used local fallback.";
             await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, null, stopwatch.ElapsedMilliseconds, null, note, exception);
             return LocalDecision(request.Candidates, note, stopwatch.ElapsedMilliseconds);
         }

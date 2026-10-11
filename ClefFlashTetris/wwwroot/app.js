@@ -116,7 +116,7 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const decision = await response.json();
       const move = options.find(option => option.id === decision.move);
-      if (!move) throw new Error("Mossa non valida");
+      if (!move) throw new Error("Invalid move");
       showDecision(decision, options);
       const matrix = rotations(shapes[current.type])[move.rotation];
       current = { ...current, matrix, rotation: move.rotation, x: move.x, y: move.landingY };
@@ -124,7 +124,7 @@
       await new Promise(resolve => setTimeout(resolve, 260));
       lock();
     } catch (error) {
-      ui.note.textContent = `Decisione fallita: ${error.message}`;
+      ui.note.textContent = `Decision failed: ${error.message}`;
       auto = false;
       updateAutoButton();
     } finally {
@@ -136,7 +136,7 @@
     const selected = options.find(option => option.id === decision.move);
     ui.latency.textContent = `${decision.latencyMs} ms`;
     ui.chosenMove.textContent = `${decision.move} · ${current.type}`;
-    ui.confidence.textContent = `Confidenza ${(decision.confidence * 100).toFixed(1)}% · ${decision.source}`;
+    ui.confidence.textContent = `Confidence ${(decision.confidence * 100).toFixed(1)}% · ${decision.source}`;
     ui.note.textContent = decision.note || "";
     ui.probabilities.replaceChildren();
     Object.entries(decision.probabilities).sort((a,b) => b[1] - a[1]).slice(0, 5).forEach(([id, value]) => {
@@ -199,7 +199,7 @@
   }
 
   function updateUi() { ui.score.textContent = score; ui.lines.textContent = lines; ui.pieces.textContent = pieces; }
-  function updateAutoButton() { ui.toggleAuto.textContent = auto ? "Ferma autopilota" : "Avvia autopilota"; ui.toggleAuto.classList.toggle("primary", !auto); }
+  function updateAutoButton() { ui.toggleAuto.textContent = auto ? "Stop autopilot" : "Start autopilot"; ui.toggleAuto.classList.toggle("primary", !auto); }
   function toggleAuto() { auto = !auto; updateAutoButton(); if (auto) void decideAndPlay(); }
   function gameOver() { current = null; auto = false; busy = false; updateAutoButton(); ui.overlay.classList.remove("hidden"); draw(); }
   function restart() { clearInterval(timer); board = Array.from({length:H}, () => Array(W).fill(0)); score = lines = pieces = 0; current = null; busy = false; bag = []; ui.overlay.classList.add("hidden"); ui.note.textContent = ""; updateUi(); draw(); spawn(); timer = setInterval(stepDown, 650); }
@@ -223,9 +223,9 @@
     ui.modelStatus.textContent = status.modelAvailable
       ? `Ollama · ${status.model}`
       : status.available
-        ? `Ollama attivo · installa ${status.model}`
-        : "Fallback locale · avvia Ollama";
+        ? `Ollama is running · install ${status.model}`
+        : "Local fallback · start Ollama";
     if (status.note) ui.note.textContent = status.note;
-  }).catch(() => { ui.modelStatus.textContent = "Stato modello non disponibile"; });
+  }).catch(() => { ui.modelStatus.textContent = "Model status unavailable"; });
   restart();
 })();

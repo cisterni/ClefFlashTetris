@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,59 +12,59 @@
     <header>
       <p class="eyebrow">DECISION MODEL LAB</p>
       <h1>Clef‑Flash <span>plays Tetris</span></h1>
-      <p class="subtitle">Una scelta tipizzata per pezzo, eseguita interamente in locale con Ollama.</p>
+      <p class="subtitle">One typed decision per piece, running entirely locally with Ollama.</p>
     </header>
 
     <section class="game-panel" aria-label="Demo Tetris">
       <div class="board-wrap">
-        <canvas id="board" width="300" height="600" aria-label="Griglia Tetris"></canvas>
+        <canvas id="board" width="300" height="600" aria-label="Tetris board"></canvas>
         <div id="overlay" class="overlay hidden">
           <strong>Game over</strong>
-          <button id="restartOverlay">Ricomincia</button>
+          <button id="restartOverlay">Play again</button>
         </div>
       </div>
 
       <aside>
         <div class="status-line">
           <span id="statusDot" class="dot"></span>
-          <span id="modelStatus">Verifica modello…</span>
+          <span id="modelStatus">Checking model…</span>
         </div>
         <p class="log-path">Audit: <code id="decisionLogPath">logs/ollama-decisions.jsonl</code></p>
 
         <div class="stats">
-          <div><span>Punti</span><strong id="score">0</strong></div>
-          <div><span>Righe</span><strong id="lines">0</strong></div>
-          <div><span>Pezzi</span><strong id="pieces">0</strong></div>
+          <div><span>Score</span><strong id="score">0</strong></div>
+          <div><span>Lines</span><strong id="lines">0</strong></div>
+          <div><span>Pieces</span><strong id="pieces">0</strong></div>
         </div>
 
         <div class="controls">
-          <button id="toggleAuto" class="primary">Avvia autopilota</button>
-          <button id="restart">Nuova partita</button>
+          <button id="toggleAuto" class="primary">Start autopilot</button>
+          <button id="restart">New game</button>
         </div>
 
         <div class="decision-card">
           <div class="decision-head">
-            <span>ULTIMA DECISIONE</span>
+            <span>LATEST DECISION</span>
             <span id="latency">— ms</span>
           </div>
-          <strong id="chosenMove">In attesa</strong>
-          <p id="confidence">Confidenza —</p>
+          <strong id="chosenMove">Waiting</strong>
+          <p id="confidence">Confidence —</p>
           <div id="probabilities" class="probabilities"></div>
           <p id="note" class="note"></p>
         </div>
 
         <details>
-          <summary>Come funziona</summary>
+          <summary>How it works</summary>
           <ol>
-            <li>Il browser enumera tutte le pose legali.</li>
-            <li>La griglia e le metriche diventano lo <code>state</code>.</li>
-            <li>Ollama/Clef‑Flash sceglie un solo ID ammesso e restituisce le probabilità.</li>
+            <li>The browser enumerates every legal placement.</li>
+            <li>The board and its metrics become the <code>state</code>.</li>
+            <li>Ollama/Clef‑Flash chooses one allowed ID and returns the probabilities.</li>
           </ol>
         </details>
       </aside>
     </section>
 
-    <footer>Frecce per giocare · ↑ ruota · spazio posa · A autopilota</footer>
+    <footer>Arrow keys to play · ↑ rotate · Space hard drop · A autopilot</footer>
   </main>
   <script src="app.js"></script>
 </body>

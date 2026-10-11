@@ -44,7 +44,7 @@ public sealed class DecisionAuditLog
             }
             catch (JsonException)
             {
-                // Conserva il corpo testuale originale quando Ollama non restituisce JSON.
+                // Preserve the original response body when Ollama does not return JSON.
             }
         }
 
@@ -82,7 +82,7 @@ public sealed class DecisionAuditLog
         }
         catch (Exception logException) when (logException is IOException or UnauthorizedAccessException)
         {
-            _logger.LogWarning(logException, "Impossibile scrivere il log decisionale in {DecisionLogPath}", _absolutePath);
+            _logger.LogWarning(logException, "Unable to write the decision log to {DecisionLogPath}", _absolutePath);
         }
     }
 }
