@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clef‑Flash plays Tetris</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">DECISION MODEL LAB</p>
+      <h1>Clef‑Flash <span>plays Tetris</span></h1>
+      <p class="subtitle">Una scelta tipizzata per pezzo, eseguita interamente in locale con Ollama.</p>
+    </header>
+
+    <section class="game-panel" aria-label="Demo Tetris">
+      <div class="board-wrap">
+        <canvas id="board" width="300" height="600" aria-label="Griglia Tetris"></canvas>
+        <div id="overlay" class="overlay hidden">
+          <strong>Game over</strong>
+          <button id="restartOverlay">Ricomincia</button>
+        </div>
+      </div>
+
+      <aside>
+        <div class="status-line">
+          <span id="statusDot" class="dot"></span>
+          <span id="modelStatus">Verifica modello…</span>
+        </div>
+        <p class="log-path">Audit: <code id="decisionLogPath">logs/ollama-decisions.jsonl</code></p>
+
+        <div class="stats">
+          <div><span>Punti</span><strong id="score">0</strong></div>
+          <div><span>Righe</span><strong id="lines">0</strong></div>
+          <div><span>Pezzi</span><strong id="pieces">0</strong></div>
+        </div>
+
+        <div class="controls">
+          <button id="toggleAuto" class="primary">Avvia autopilota</button>
+          <button id="restart">Nuova partita</button>
+        </div>
+
+        <div class="decision-card">
+          <div class="decision-head">
+            <span>ULTIMA DECISIONE</span>
+            <span id="latency">— ms</span>
+          </div>
+          <strong id="chosenMove">In attesa</strong>
+          <p id="confidence">Confidenza —</p>
+          <div id="probabilities" class="probabilities"></div>
+          <p id="note" class="note"></p>
+        </div>
+
+        <details>
+          <summary>Come funziona</summary>
+          <ol>
+            <li>Il browser enumera tutte le pose legali.</li>
+            <li>La griglia e le metriche diventano lo <code>state</code>.</li>
+            <li>Ollama/Clef‑Flash sceglie un solo ID ammesso e restituisce le probabilità.</li>
+          </ol>
+        </details>
+      </aside>
+    </section>
+
+    <footer>Frecce per giocare · ↑ ruota · spazio posa · A autopilota</footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

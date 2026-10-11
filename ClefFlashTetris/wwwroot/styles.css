@@ -1,0 +1,82 @@
+:root {
+  color-scheme: dark;
+  --ink: #eef1ff;
+  --muted: #959bb4;
+  --panel: #121522;
+  --line: #2a3046;
+  --accent: #b8ff55;
+  --violet: #8f7cff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 12% 8%, #252b55 0, transparent 34%),
+    radial-gradient(circle at 88% 84%, #223a35 0, transparent 30%),
+    #090b12;
+}
+
+.shell { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 28px; }
+.eyebrow { color: var(--accent); font: 700 12px/1.2 ui-monospace, monospace; letter-spacing: .22em; }
+h1 { margin: 8px 0; font-size: clamp(36px, 7vw, 72px); line-height: .95; letter-spacing: -.055em; }
+h1 span { color: var(--muted); }
+.subtitle { margin: 18px 0 34px; color: var(--muted); font-size: 17px; }
+
+.game-panel {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 28px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  box-shadow: 0 30px 80px #0008;
+}
+
+.board-wrap { position: relative; width: 300px; height: 600px; }
+#board { display: block; border-radius: 10px; background: #080a10; }
+.overlay { position: absolute; inset: 0; display: grid; place-content: center; gap: 16px; text-align: center; background: #090b12d9; border-radius: 10px; }
+.overlay strong { font-size: 32px; }
+.hidden { display: none; }
+
+aside { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.status-line { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 14px; }
+.log-path { margin: -10px 0 0 18px; color: var(--muted); font-size: 11px; }
+.log-path code { overflow-wrap: anywhere; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #ffcc4d; box-shadow: 0 0 14px currentColor; }
+.dot.live { background: var(--accent); }
+.dot.fallback { background: #ffad55; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stats div { padding: 14px 12px; border: 1px solid var(--line); border-radius: 12px; background: #0c0f19; }
+.stats span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.stats strong { display: block; margin-top: 5px; font: 700 23px/1 ui-monospace, monospace; }
+.controls { display: flex; gap: 9px; }
+button { border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; color: var(--ink); background: #171b2b; font: inherit; cursor: pointer; }
+button:hover { border-color: #69708d; }
+button.primary { color: #10140a; background: var(--accent); border-color: var(--accent); font-weight: 800; }
+
+.decision-card { padding: 16px; border: 1px solid #3a4260; border-radius: 14px; background: linear-gradient(145deg, #181c2c, #10131e); }
+.decision-head { display: flex; justify-content: space-between; color: var(--muted); font: 700 11px/1 ui-monospace, monospace; letter-spacing: .08em; }
+#chosenMove { display: block; margin-top: 15px; font: 700 25px/1.1 ui-monospace, monospace; color: var(--accent); }
+#confidence, .note { color: var(--muted); font-size: 13px; }
+.probabilities { display: grid; gap: 6px; margin-top: 14px; }
+.prob-row { display: grid; grid-template-columns: 72px 1fr 44px; align-items: center; gap: 7px; font: 12px/1 ui-monospace, monospace; }
+.bar { height: 6px; overflow: hidden; border-radius: 8px; background: #2a3042; }
+.bar i { display: block; height: 100%; background: var(--violet); border-radius: inherit; }
+.note { min-height: 1.2em; margin-bottom: 0; color: #ffbd75; }
+details { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
+summary { cursor: pointer; color: var(--ink); }
+li { margin: 8px 0; }
+code { color: var(--accent); }
+footer { margin-top: 18px; color: var(--muted); text-align: center; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .shell { padding-top: 28px; }
+  .game-panel { grid-template-columns: 1fr; justify-items: center; padding: 16px; }
+  aside { width: 100%; }
+}
