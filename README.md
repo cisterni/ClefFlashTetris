@@ -93,6 +93,28 @@ Alternatively, pass the URL on the command line:
 dotnet run --project ClefFlashTetris/ClefFlashTetris.csproj -- --Ollama:BaseUrl=http://100.64.0.9:11434
 ```
 
+## Ollama decision throughput benchmark
+
+[`benchmark-ollama.ps1`](ClefFlashTetris/scripts/benchmark-ollama.ps1) measures completed System One decisions per minute and reports failures plus mean, p50, p95, and p99 latency. It requires PowerShell 7 or later.
+
+Run a one-minute sequential test against local Ollama:
+
+```powershell
+pwsh ./ClefFlashTetris/scripts/benchmark-ollama.ps1
+```
+
+Test the remote Tailscale node with four concurrent requests for two minutes:
+
+```powershell
+pwsh ./ClefFlashTetris/scripts/benchmark-ollama.ps1 `
+  -BaseUrl http://100.64.0.9:11434 `
+  -Model clef-flash `
+  -Concurrency 4 `
+  -DurationSeconds 120
+```
+
+The warm-up request is excluded from the measurement. Each measured request contains a different ID to avoid benchmarking an identical cached prompt. A worker finishes its current in-flight request after the requested duration, so the reported elapsed time can be slightly longer than `DurationSeconds`.
+
 - No API key is required, and no data is sent to cloud services.
 - The server reduces candidate moves to the best 26 before asking the model to choose.
 - Network errors, timeouts, or invalid responses trigger an explicit fallback and are recorded in the ASP.NET Core logs.
