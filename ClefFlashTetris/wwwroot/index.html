@@ -37,6 +37,17 @@
           <div><span>Pieces</span><strong id="pieces">0</strong></div>
         </div>
 
+        <div class="input-mode">
+          <label for="inputMode">MODEL INPUT</label>
+          <select id="inputMode">
+            <option value="structured">Text board + metrics</option>
+            <option value="image">Board image + metrics</option>
+            <option value="structured-no-metrics">Text board only</option>
+            <option value="image-no-metrics">Board image only</option>
+          </select>
+          <p id="inputHint">Sends the board as text plus the BCTS metrics for each candidate move.</p>
+        </div>
+
         <div class="controls">
           <button id="toggleAuto" class="primary">Start autopilot</button>
           <button id="restart">New game</button>
@@ -57,7 +68,7 @@
           <summary>How it works</summary>
           <ol>
             <li>The browser enumerates every legal placement.</li>
-            <li>The board and its metrics become the <code>state</code>.</li>
+            <li>The selector sends a text board or PNG snapshot, with candidate metrics optionally included.</li>
             <li>Ollama/Clef‑Flash chooses one allowed ID and returns the probabilities.</li>
           </ol>
         </details>

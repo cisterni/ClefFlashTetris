@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -22,11 +23,31 @@ app.MapGet("/api/status", async (OllamaDecisionClient client, CancellationToken 
 
 app.MapPost("/api/decision", async (DecisionRequest request, OllamaDecisionClient client, CancellationToken cancellationToken) =>
 {
-    if (request.Board is not { Length: 20 } || request.Board.Any(row => row is null || row.Length != 10))
+    var inputMode = request.InputMode?.Trim().ToLowerInvariant() ?? "structured";
+    if (inputMode is not ("structured" or "image" or "structured-no-metrics" or "image-no-metrics"))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [nameof(request.InputMode)] = ["Input mode must be 'structured', 'image', 'structured-no-metrics', or 'image-no-metrics'."]
+        });
+    }
+
+    var usesImage = inputMode is "image" or "image-no-metrics";
+
+    if (!usesImage &&
+        (request.Board is not { Length: 20 } || request.Board.Any(row => row is null || row.Length != 10)))
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
             [nameof(request.Board)] = ["The board must contain 20 rows of 10 cells each."]
+        });
+    }
+
+    if (usesImage && !IsSupportedBoardImage(request.BoardImage, out var imageError))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [nameof(request.BoardImage)] = [imageError]
         });
     }
 
@@ -55,7 +76,60 @@ app.MapPost("/api/decision", async (DecisionRequest request, OllamaDecisionClien
 app.MapFallbackToFile("index.html");
 app.Run();
 
-public sealed record DecisionRequest(int[][] Board, string Piece, int Score, int Lines, IReadOnlyList<MoveCandidate> Candidates);
+static bool IsSupportedBoardImage(string? base64Image, out string error)
+{
+    if (string.IsNullOrWhiteSpace(base64Image))
+    {
+        error = "A base64-encoded board image is required in image mode.";
+        return false;
+    }
+
+    if (base64Image.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+    {
+        error = "Send raw base64 image data without a data URL prefix.";
+        return false;
+    }
+
+    const int maxEncodedLength = 12 * 1024 * 1024;
+    if (base64Image.Length > maxEncodedLength)
+    {
+        error = "The board image is too large.";
+        return false;
+    }
+
+    byte[] bytes;
+    try
+    {
+        bytes = Convert.FromBase64String(base64Image);
+    }
+    catch (FormatException)
+    {
+        error = "The board image is not valid base64 data.";
+        return false;
+    }
+
+    var isPng = bytes.Length >= 8 && bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+    var isJpeg = bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
+    var isWebP = bytes.Length >= 12 && bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8);
+
+    if (!isPng && !isJpeg && !isWebP)
+    {
+        error = "The board image must be a PNG, JPEG, or WebP file.";
+        return false;
+    }
+
+    error = string.Empty;
+    return true;
+}
+
+public sealed record DecisionRequest(
+    int[][]? Board,
+    string Piece,
+    int Score,
+    int Lines,
+    IReadOnlyList<MoveCandidate> Candidates,
+    string InputMode = "structured",
+    string? BoardImage = null);
 
 public sealed record MoveCandidate(
     string Id,
@@ -63,7 +137,16 @@ public sealed record MoveCandidate(
     int X,
     int LandingY,
     int ClearedLines,
+    int RotationCost,
+    double LandingHeight,
+    int ErodedPieceCells,
+    int RowTransitions,
+    int ColumnTransitions,
     int Holes,
+    int HolesDelta,
+    int CumulativeWells,
+    int HoleDepth,
+    int RowsWithHoles,
     int AggregateHeight,
     int Bumpiness,
     int MaxHeight);
@@ -82,6 +165,7 @@ public sealed record ModelStatus(string Model, string Provider, string Endpoint,
 public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration configuration, DecisionAuditLog auditLog, ILogger<OllamaDecisionClient> logger)
 {
     private const int MaxChoiceOptions = 26;
+    private const double MinDecisionConfidence = 0.15;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -131,40 +215,74 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
 
     public async Task<DecisionResponse> DecideAsync(DecisionRequest request, CancellationToken cancellationToken)
     {
-        var shortlistedCandidates = RankCandidates(request.Candidates)
+        var inputMode = request.InputMode.Trim().ToLowerInvariant();
+        var usesImage = inputMode is "image" or "image-no-metrics";
+        var includesMetrics = inputMode is "structured" or "image";
+        var safeCandidates = request.Candidates.Any(candidate => candidate.HolesDelta <= 0)
+            ? request.Candidates.Where(candidate => candidate.HolesDelta <= 0).ToArray()
+            : request.Candidates;
+        var shortlistedCandidates = RankCandidates(safeCandidates)
             .Take(MaxChoiceOptions)
             .Select(item => item.Candidate)
             .ToArray();
 
         var criteria = shortlistedCandidates.ToDictionary(
             candidate => candidate.Id,
-            candidate => $"Rotation {candidate.Rotation}, column {candidate.X}. Outcome: clearedLines={candidate.ClearedLines}, holes={candidate.Holes}, aggregateHeight={candidate.AggregateHeight}, bumpiness={candidate.Bumpiness}, maxHeight={candidate.MaxHeight}.");
+            candidate => includesMetrics
+                ? $"BCTS_UTILITY={CalculateUtility(candidate).ToString("0.00", CultureInfo.InvariantCulture)} (higher is better); rotationCost={candidate.RotationCost}; rotation={candidate.Rotation}; column={candidate.X}; holesDelta={candidate.HolesDelta}; holes={candidate.Holes}; rowsWithHoles={candidate.RowsWithHoles}; holeDepth={candidate.HoleDepth}; maxHeight={candidate.MaxHeight}; landingHeight={candidate.LandingHeight.ToString("0.0", CultureInfo.InvariantCulture)}; columnTransitions={candidate.ColumnTransitions}; rowTransitions={candidate.RowTransitions}; cumulativeWells={candidate.CumulativeWells}; erodedPieceCells={candidate.ErodedPieceCells}."
+                : $"Rotate the current {request.Piece} piece {candidate.Rotation} clockwise quarter-turn(s), then place the left edge of its rotated bounding box at zero-based column {candidate.X}.");
 
-        var state = new
-        {
-            game = "Tetris",
-            objective = "Choose a legal placement that maximizes cleared lines while minimizing holes, maximum height, and surface bumpiness.",
-            piece = request.Piece,
-            score = request.Score,
-            lines = request.Lines,
-            board = request.Board.Select(row => string.Concat(row.Select(cell => cell == 0 ? '.' : '#'))).ToArray()
-        };
+        object state = usesImage
+            ? new
+            {
+                game = "Tetris",
+                objective = includesMetrics
+                    ? "Choose the afterstate with the best long-term survival and future placement flexibility. Use the attached 10 by 20 board image together with the BCTS-style candidate features."
+                    : "Inspect the attached 10 by 20 board image, mentally simulate each allowed placement, and choose the afterstate with the best long-term survival and future placement flexibility.",
+                piece = request.Piece,
+                score = request.Score,
+                lines = request.Lines,
+                imageGuide = "The image shows the occupied board cells and the current colored piece at the top. Candidate columns are zero-based from the left."
+            }
+            : new
+            {
+                game = "Tetris",
+                objective = includesMetrics
+                    ? "Choose the afterstate with the best long-term survival and future placement flexibility using the BCTS-style candidate features."
+                    : "Read the 10 by 20 text board, mentally simulate each allowed placement, and choose the afterstate with the best long-term survival and future placement flexibility.",
+                piece = request.Piece,
+                score = request.Score,
+                lines = request.Lines,
+                boardGuide = "Rows run from top to bottom; '#' is occupied and '.' is empty. Candidate columns are zero-based from the left.",
+                board = request.Board!.Select(row => string.Concat(row.Select(cell => cell == 0 ? '.' : '#'))).ToArray()
+            };
 
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            model = Model,
-            state,
-            questions = new Dictionary<string, object>
+            ["model"] = Model,
+            ["state"] = state,
+            ["questions"] = new Dictionary<string, object>
             {
                 ["move"] = new
                 {
                     type = "choice",
-                    instructions = "Choose the best Tetris move among the allowed options. Give absolute priority to cleared lines, avoid holes, then reduce maximum height, aggregate height, and bumpiness.",
+                    instructions = (usesImage, includesMetrics) switch
+                    {
+                        (true, true) => "Study the image, then choose the candidate with the greatest BCTS_UTILITY. Candidates that create avoidable holes have already been removed. Do not reinterpret or rebalance the component metrics. If BCTS_UTILITY values differ by less than 0.50, choose the lower rotationCost; prefer rotationCost=0. Return exactly one allowed candidate ID.",
+                        (false, true) => "Choose the candidate with the greatest BCTS_UTILITY. Candidates that create avoidable holes have already been removed. Do not reinterpret or rebalance the component metrics. If BCTS_UTILITY values differ by less than 0.50, choose the lower rotationCost; prefer rotationCost=0. Return exactly one allowed candidate ID.",
+                        (true, false) => "Study the board image and mentally simulate every allowed placement. Prefer moves that create no covered holes, keep the stack low and accessible, reduce deep wells and jagged surfaces, and preserve open columns. Do not rotate unless the rotated placement is structurally better; when outcomes appear equivalent, prefer the unrotated placement. Return exactly one allowed candidate ID.",
+                        _ => "Read the text board and mentally simulate every allowed placement. Prefer moves that create no covered holes, keep the stack low and accessible, reduce deep wells and jagged surfaces, and preserve open columns. Do not rotate unless the rotated placement is structurally better; when outcomes appear equivalent, prefer the unrotated placement. Return exactly one allowed candidate ID."
+                    },
                     criteria
                 }
             },
-            keep_alive = "10m"
+            ["keep_alive"] = "10m"
         };
+
+        if (usesImage)
+        {
+            payload["images"] = new[] { request.BoardImage! };
+        }
 
         using var message = new HttpRequestMessage(
             HttpMethod.Post,
@@ -183,7 +301,7 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
                 logger.LogWarning("Ollama returned HTTP {StatusCode}", (int)response.StatusCode);
                 var note = $"Ollama HTTP {(int)response.StatusCode}; used local fallback.";
                 await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, (int)response.StatusCode, stopwatch.ElapsedMilliseconds, rawResponse, note, null);
-                return LocalDecision(request.Candidates, note, stopwatch.ElapsedMilliseconds);
+                return LocalDecision(safeCandidates, note, stopwatch.ElapsedMilliseconds);
             }
 
             var json = JsonSerializer.Deserialize<JsonElement>(rawResponse, JsonOptions);
@@ -198,7 +316,15 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
             {
                 const string note = "Ollama returned an invalid choice; used local fallback.";
                 await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, (int)response.StatusCode, stopwatch.ElapsedMilliseconds, rawResponse, note, null);
-                return LocalDecision(request.Candidates, note, stopwatch.ElapsedMilliseconds);
+                return LocalDecision(safeCandidates, note, stopwatch.ElapsedMilliseconds);
+            }
+
+            var bestBctsCandidate = RankCandidates(safeCandidates).First().Candidate;
+            if (confidence < MinDecisionConfidence && choice != bestBctsCandidate.Id)
+            {
+                var note = $"Ollama confidence {confidence:P1} is below {MinDecisionConfidence:P0} and its choice conflicts with the BCTS guardrail; used local fallback.";
+                await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, (int)response.StatusCode, stopwatch.ElapsedMilliseconds, rawResponse, note, null);
+                return LocalDecision(safeCandidates, note, stopwatch.ElapsedMilliseconds);
             }
 
             logger.LogInformation("Ollama/{Model}: {Move} ({Confidence:P1}) in {Latency} ms", Model, choice, confidence, stopwatch.ElapsedMilliseconds);
@@ -211,7 +337,7 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
             logger.LogWarning(exception, "Ollama/{Model} decision unavailable; enabling local fallback", Model);
             const string note = "Ollama/Clef-Flash is unreachable; used local fallback.";
             await auditLog.WriteAsync(Model, $"{BaseUrl}/v1/systemone", payload, null, stopwatch.ElapsedMilliseconds, null, note, exception);
-            return LocalDecision(request.Candidates, note, stopwatch.ElapsedMilliseconds);
+            return LocalDecision(safeCandidates, note, stopwatch.ElapsedMilliseconds);
         }
     }
 
@@ -230,13 +356,19 @@ public sealed class OllamaDecisionClient(HttpClient httpClient, IConfiguration c
 
     private static IOrderedEnumerable<RankedCandidate> RankCandidates(IReadOnlyList<MoveCandidate> candidates) =>
         candidates
-            .Select(candidate => new
-            {
-                Candidate = candidate,
-                Utility = candidate.ClearedLines * 1000d - candidate.Holes * 120d - candidate.MaxHeight * 8d - candidate.AggregateHeight * 2.2d - candidate.Bumpiness * 1.8d
-            })
-            .Select(item => new RankedCandidate(item.Candidate, item.Utility))
-            .OrderByDescending(item => item.Utility);
+            .Select(candidate => new RankedCandidate(candidate, CalculateUtility(candidate)))
+            .OrderByDescending(item => item.Utility)
+            .ThenBy(item => item.Candidate.RotationCost);
+
+    private static double CalculateUtility(MoveCandidate candidate) =>
+        candidate.ErodedPieceCells * 6.60d
+        - candidate.RowsWithHoles * 24.04d
+        - candidate.ColumnTransitions * 19.77d
+        - candidate.Holes * 13.08d
+        - candidate.LandingHeight * 12.63d
+        - candidate.CumulativeWells * 10.49d
+        - candidate.RowTransitions * 9.22d
+        - candidate.HoleDepth * 1.61d;
 
     private sealed record RankedCandidate(MoveCandidate Candidate, double Utility);
 }

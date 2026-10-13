@@ -4,7 +4,7 @@
   const W = 10, H = 20, CELL = 30;
   const canvas = document.querySelector("#board");
   const ctx = canvas.getContext("2d");
-  const ui = Object.fromEntries(["score", "lines", "pieces", "modelStatus", "statusDot", "decisionLogPath", "toggleAuto", "restart", "restartOverlay", "overlay", "latency", "chosenMove", "confidence", "probabilities", "note"].map(id => [id, document.querySelector(`#${id}`)]));
+  const ui = Object.fromEntries(["score", "lines", "pieces", "modelStatus", "statusDot", "decisionLogPath", "inputMode", "inputHint", "toggleAuto", "restart", "restartOverlay", "overlay", "latency", "chosenMove", "confidence", "probabilities", "note"].map(id => [id, document.querySelector(`#${id}`)]));
   const colors = ["", "#7bdaff", "#ffe269", "#ae8bff", "#79ed9b", "#ff727f", "#7195ff", "#ffad62"];
   const shapes = {
     I: [[1,1,1,1]], O: [[2,2],[2,2]], T: [[0,3,0],[3,3,3]],
@@ -72,17 +72,68 @@
   }
 
   function metrics(grid) {
-    const heights = [], holesByColumn = [];
+    const heights = [];
+    let holes = 0, holeDepth = 0;
+    const rowsWithHoles = new Set();
     for (let x = 0; x < W; x++) {
-      let top = H, holes = 0, seen = false;
+      let top = H, filledAbove = 0;
       for (let y = 0; y < H; y++) {
-        if (grid[y][x]) { if (!seen) top = y; seen = true; }
-        else if (seen) holes++;
+        if (grid[y][x]) {
+          if (top === H) top = y;
+          filledAbove++;
+        } else if (filledAbove) {
+          holes++;
+          holeDepth += filledAbove;
+          rowsWithHoles.add(y);
+        }
       }
-      heights.push(H - top); holesByColumn.push(holes);
+      heights.push(H - top);
     }
+
+    let rowTransitions = 0;
+    for (let y = 0; y < H; y++) {
+      let previous = 1;
+      for (let x = 0; x < W; x++) {
+        const occupied = grid[y][x] ? 1 : 0;
+        if (occupied !== previous) rowTransitions++;
+        previous = occupied;
+      }
+      if (previous === 0) rowTransitions++;
+    }
+
+    let columnTransitions = 0;
+    for (let x = 0; x < W; x++) {
+      let previous = 0;
+      for (let y = 0; y < H; y++) {
+        const occupied = grid[y][x] ? 1 : 0;
+        if (occupied !== previous) columnTransitions++;
+        previous = occupied;
+      }
+      if (previous === 0) columnTransitions++;
+    }
+
+    let cumulativeWells = 0;
+    for (let x = 0; x < W; x++) {
+      let depth = 0;
+      for (let y = 0; y < H; y++) {
+        const leftFilled = x === 0 || grid[y][x - 1];
+        const rightFilled = x === W - 1 || grid[y][x + 1];
+        if (!grid[y][x] && leftFilled && rightFilled) {
+          depth++;
+          cumulativeWells += depth;
+        } else {
+          depth = 0;
+        }
+      }
+    }
+
     return {
-      holes: holesByColumn.reduce((a,b) => a+b, 0),
+      holes,
+      holeDepth,
+      rowsWithHoles: rowsWithHoles.size,
+      rowTransitions,
+      columnTransitions,
+      cumulativeWells,
       aggregateHeight: heights.reduce((a,b) => a+b, 0),
       bumpiness: heights.slice(1).reduce((sum, height, index) => sum + Math.abs(height - heights[index]), 0),
       maxHeight: Math.max(...heights)
@@ -91,13 +142,31 @@
 
   function candidates() {
     const result = [];
+    const currentMetrics = metrics(board);
     rotations(shapes[current.type]).forEach((matrix, rotation) => {
       for (let x = 0; x <= W - matrix[0].length; x++) {
         const y = dropY(board, matrix, x);
         if (y === null) continue;
         const landed = merge(board, matrix, x, y);
+        const fullRows = new Set(landed.map((row, rowIndex) => row.every(Boolean) ? rowIndex : -1).filter(rowIndex => rowIndex >= 0));
+        let pieceCellsInClearedRows = 0;
+        matrix.forEach((row, pieceY) => row.forEach((value) => {
+          if (value && fullRows.has(y + pieceY)) pieceCellsInClearedRows++;
+        }));
         const cleared = clearLines(landed);
-        result.push({ id: `r${rotation}-x${x}`, rotation, x, landingY: y, clearedLines: cleared.cleared, ...metrics(cleared.grid) });
+        const afterMetrics = metrics(cleared.grid);
+        result.push({
+          id: `r${rotation}-x${x}`,
+          rotation,
+          x,
+          landingY: y,
+          clearedLines: cleared.cleared,
+          rotationCost: Math.min(rotation, 4 - rotation),
+          landingHeight: H - (y + matrix.length / 2),
+          erodedPieceCells: cleared.cleared * pieceCellsInClearedRows,
+          holesDelta: afterMetrics.holes - currentMetrics.holes,
+          ...afterMetrics
+        });
       }
     });
     return result;
@@ -107,11 +176,18 @@
     if (!auto || busy || !current) return;
     busy = true;
     const options = candidates();
+    const inputMode = ui.inputMode.value;
+    const payload = { piece: current.type, score, lines, candidates: options, inputMode };
+    if (inputMode === "image" || inputMode === "image-no-metrics") {
+      payload.boardImage = canvas.toDataURL("image/png").split(",", 2)[1];
+    } else {
+      payload.board = board;
+    }
     try {
       const response = await fetch("/api/decision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ board, piece: current.type, score, lines, candidates: options })
+        body: JSON.stringify(payload)
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const decision = await response.json();
@@ -199,6 +275,15 @@
   }
 
   function updateUi() { ui.score.textContent = score; ui.lines.textContent = lines; ui.pieces.textContent = pieces; }
+  function updateInputHint() {
+    const hints = {
+      structured: "Sends the board as text plus the BCTS metrics for each candidate move.",
+      image: "Sends a PNG snapshot plus the BCTS metrics for each candidate move.",
+      "structured-no-metrics": "Sends the board as text and move coordinates, without candidate metrics.",
+      "image-no-metrics": "Sends a PNG snapshot and move coordinates, without candidate metrics."
+    };
+    ui.inputHint.textContent = hints[ui.inputMode.value];
+  }
   function updateAutoButton() { ui.toggleAuto.textContent = auto ? "Stop autopilot" : "Start autopilot"; ui.toggleAuto.classList.toggle("primary", !auto); }
   function toggleAuto() { auto = !auto; updateAutoButton(); if (auto) void decideAndPlay(); }
   function gameOver() { current = null; auto = false; busy = false; updateAutoButton(); ui.overlay.classList.remove("hidden"); draw(); }
@@ -214,6 +299,7 @@
     else if (event.key.toLowerCase() === "a") toggleAuto();
   });
   ui.toggleAuto.addEventListener("click", toggleAuto);
+  ui.inputMode.addEventListener("change", updateInputHint);
   ui.restart.addEventListener("click", restart);
   ui.restartOverlay.addEventListener("click", restart);
 
@@ -227,5 +313,6 @@
         : "Local fallback · start Ollama";
     if (status.note) ui.note.textContent = status.note;
   }).catch(() => { ui.modelStatus.textContent = "Model status unavailable"; });
+  updateInputHint();
   restart();
 })();

@@ -24,8 +24,9 @@
   "piece": "I",
   "score": 0,
   "lines": 0,
+  "inputMode": "structured",
   "candidates": [
-    { "id": "r0-x0", "rotation": 0, "x": 0, "landingY": 19, "clearedLines": 0, "holes": 0, "aggregateHeight": 4, "bumpiness": 1, "maxHeight": 1 },
-    { "id": "r1-x0", "rotation": 1, "x": 0, "landingY": 16, "clearedLines": 0, "holes": 0, "aggregateHeight": 4, "bumpiness": 4, "maxHeight": 4 }
+    { "id": "r0-x0", "rotation": 0, "rotationCost": 0, "x": 0, "landingY": 19, "clearedLines": 0, "landingHeight": 0.5, "erodedPieceCells": 0, "rowTransitions": 40, "columnTransitions": 10, "holes": 0, "holesDelta": 0, "cumulativeWells": 0, "holeDepth": 0, "rowsWithHoles": 0, "aggregateHeight": 4, "bumpiness": 1, "maxHeight": 1 },
+    { "id": "r1-x0", "rotation": 1, "rotationCost": 1, "x": 0, "landingY": 16, "clearedLines": 0, "landingHeight": 2.0, "erodedPieceCells": 0, "rowTransitions": 40, "columnTransitions": 10, "holes": 0, "holesDelta": 0, "cumulativeWells": 0, "holeDepth": 0, "rowsWithHoles": 0, "aggregateHeight": 4, "bumpiness": 4, "maxHeight": 4 }
   ]
 }
